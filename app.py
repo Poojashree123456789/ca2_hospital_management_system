@@ -2,14 +2,12 @@ from flask import Flask, render_template, request, redirect, url_for, flash
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from models import db, User, Patient, Doctor, Appointment, Bill, Prescription
-from datetime import datetime, date, timedelta
+from datetime import datetime
+import os
 import time
 
-import os
-
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'hospital-secret-key-2024'
-# MySQL Configuration - Uses environment variable or defaults to localhost
+app.config['SECRET_KEY'] = 'hospital-secret-key-2025'
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
     'DATABASE_URL', 'mysql+pymysql://root:Poojashree%401234@localhost/hospital_db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -21,14 +19,10 @@ login_manager.login_view = 'login'
 
 
 def init_database():
-    """Create tables and seed initial data if database is empty"""
     db.create_all()
-
-    # Check if data already exists
     if User.query.first():
         return
 
-    # Create default users
     users = [
         User(username='admin', password=generate_password_hash(
             'admin123'), role='admin'),
@@ -38,25 +32,22 @@ def init_database():
     for user in users:
         db.session.add(user)
 
-    # Create sample doctors
     doctors = [
-        Doctor(name='Dr. John Smith', specialty='General Medicine',
+        Doctor(name='Dr. Peter Anderson', specialty='General Medicine',
                phone='555-0101', available=True),
-        Doctor(name='Dr. Sarah Johnson', specialty='Cardiology',
+        Doctor(name='Dr. Pete Johnson', specialty='Cardiology',
                phone='555-0102', available=True),
-        Doctor(name='Dr. Michael Brown', specialty='Pediatrics',
+        Doctor(name='Dr. Qudus Brown', specialty='Pediatrics',
                phone='555-0103', available=True),
     ]
     for doctor in doctors:
         db.session.add(doctor)
     db.session.commit()
 
-    # Create doctor user account
     doctor_user = User(username='doctor', password=generate_password_hash(
         'doctor123'), role='doctor', doctor_id=1)
     db.session.add(doctor_user)
 
-    # Create sample patients
     patients = [
         Patient(name='Alice Williams', age=35, gender='Female',
                 phone='555-1001', address='123 Main St'),
@@ -67,34 +58,36 @@ def init_database():
         db.session.add(patient)
     db.session.commit()
 
-    print("Database initialized with sample data!")
 
-
-# Initialize database with retry logic for Docker
 with app.app_context():
-    max_retries = 5
-    for attempt in range(max_retries):
+    for attempt in range(5):
         try:
             init_database()
             break
         except Exception as e:
-            if attempt < max_retries - 1:
-                print(
-                    f"Database not ready, retrying in 3 seconds... (attempt {attempt + 1}/{max_retries})")
+            if attempt < 4:
                 time.sleep(3)
             else:
-                print(f"Warning: Could not initialize database: {e}")
+                print(f"Could not initialize database: {e}")
 
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# ==================== AUTH ROUTES ====================
-
 
 @app.route('/')
-def index():
+def home():
+    stats = {
+        'doctors': Doctor.query.count(),
+        'patients': Patient.query.count()
+    }
+    doctors = Doctor.query.limit(4).all()
+    return render_template('home.html', stats=stats, doctors=doctors)
+
+
+@app.route('/app')
+def app_index():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
     return redirect(url_for('login'))
@@ -133,8 +126,6 @@ def dashboard():
         'bills_pending': Bill.query.filter_by(status='pending').count()
     }
     return render_template('dashboard.html', stats=stats)
-
-# ==================== PATIENT ROUTES ====================
 
 
 @app.route('/patients')
@@ -201,8 +192,6 @@ def view_patient(id):
     patient = Patient.query.get_or_404(id)
     return render_template('view_patient.html', patient=patient)
 
-# ==================== DOCTOR ROUTES ====================
-
 
 @app.route('/doctors')
 @login_required
@@ -264,8 +253,6 @@ def delete_doctor(id):
     flash('Doctor deleted successfully!', 'success')
     return redirect(url_for('doctors'))
 
-# ==================== APPOINTMENT ROUTES ====================
-
 
 @app.route('/appointments')
 @login_required
@@ -319,8 +306,6 @@ def complete_appointment(id):
     flash('Appointment marked as completed!', 'success')
     return redirect(url_for('appointments'))
 
-# ==================== BILLING ROUTES ====================
-
 
 @app.route('/bills')
 @login_required
@@ -362,8 +347,6 @@ def pay_bill(id):
 def print_receipt(id):
     bill = Bill.query.get_or_404(id)
     return render_template('receipt.html', bill=bill)
-
-# ==================== PRESCRIPTION ROUTES ====================
 
 
 @app.route('/prescriptions')
